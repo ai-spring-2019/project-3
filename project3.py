@@ -14,16 +14,19 @@ def safe_division(numerator, denominator):
     return numerator / denominator
 
 def safe_exp(power):
-    """Takes e^power. If this results in a math overflow, instead returns
-    MAX_FLOAT"""
+    """Takes e^power. If this results in a math overflow, or is greater
+    than MAX_FLOAT, instead returns MAX_FLOAT"""
     try:
-        return math.exp(power)
+        result = math.exp(power)
+        if result > MAX_FLOAT:
+            return MAX_FLOAT
+        return result
     except OverflowError:
         return MAX_FLOAT
 
 FUNCTION_DICT = {"+": operator.add,
                  "-": operator.sub,
-                 "*": operator.sub,
+                 "*": operator.mul,
                  "/": safe_division,
                  "exp": safe_exp,
                  "sin": math.sin,
@@ -38,6 +41,9 @@ FUNCTION_ARITIES = {"+": 2,
 FUNCTIONS = list(FUNCTION_DICT.keys())
 
 VARIABLES = ["x", "y"]
+POPULATION_SIZE = 100
+MAX_GENERATIONS = 100
+TOURNAMENT_SIZE = 5
 
 
 def random_terminal():
@@ -94,6 +100,15 @@ class GPNode:
 
                 return FunctionNode(function_symbol, children)
 
+    @classmethod
+    def initialize_tree(cls, min_depth, max_depth):
+        """Generates a tree using Full or Grow, with a depth somewhere between
+        min_depth and max_depth inclusive"""
+        depth = random.randint(min_depth, max_depth)
+        if random.random() < 0.5:
+            return cls.generate_tree_full(depth)
+        else:
+            return cls.generate_tree_grow(depth)
 
 class FunctionNode(GPNode):
     """Internal nodes that contain Functions."""
@@ -148,44 +163,199 @@ class TerminalNode(GPNode):
         return 0
 
 
+class Individual:
+    """Represents a GP individual"""
+
+    def __init__(self, program):
+        self.program = program
+        self.errors = None
+        self.total_error = None
+
+    def __str__(self):
+        return """Individual with:
+|- Program: {}
+|- Total Error: {}
+|- Errors: {}""".format(self.program, self.total_error, self.errors)
+
+    def evaluate_individual(self, test_cases):
+        """Evaluates the individual given a set of test cases. test_cases should
+        be a list of input/output pairs (tuples) telling what output should be produced
+        given each input. Inputs are themselves dictionaries of assignments to
+        variable names (strings), and outputs are floats."""
+
+        self.errors = []
+        for (input, correct_output) in test_cases:
+            program_output = self.program.eval(input)
+
+            error = abs(program_output - correct_output)
+            self.errors.append(error)
+
+        self.total_error = sum(self.errors)
+
+    def is_solution(self, threshold):
+        """Returns True if total_error is less than threshold."""
+        return self.total_error < threshold
+
+
+def tournament_selection(population, tournament_size):
+    """Selects an individual from the population using tournament selection
+    with given tournament size."""
+
+    best = None
+    best_error = MAX_FLOAT
+
+    # Consider tournament_size random individuals, and pick the best one
+    for _ in range(tournament_size):
+        ind = random.choice(population)
+
+        if ind.total_error < best_error:
+            best = ind
+            best_error = ind.total_error
+
+    return best
+
+
+
+
+
+
+
+def make_test_cases():
+    """Makes a list of test cases. Each test case is a tuple where the first
+    element is a dictionary containing the x and y assignments, and the second
+    element is the correct output. Hard coded for the function
+       f(x,y) = (x * 5) + y """
+
+    cases = []
+
+    for x in range(-10, 11, 2):
+        for y in range(-10, 11, 2):
+            correct_output = float((x * 5) + y)
+            input_output = ({"x": float(x), "y": float(y)}, correct_output)
+            cases.append(input_output)
+
+    return cases
+
+def report(generation, best_individual):
+    """Prints a report for this generation."""
+
+    print("===== Report at Generation {:3d} =====".format(generation))
+    print("Best program: {}".format(best_individual.program))
+    print("Best errors: {}".format(best_individual.errors))
+    print("Best total error: {}".format(best_individual.total_error))
+    print("====================================\n")
+
+def gp(threshold):
+    """Runs GP. Returns an individual with total_error less than threshold."""
+
+    # Create test cases:
+    test_cases = make_test_cases()
+
+    # Create a population
+    population = [Individual(GPNode.initialize_tree(2, 5)) for _ in range(POPULATION_SIZE)]
+
+    for generation in range(MAX_GENERATIONS):
+
+        # Evaluate the population
+        best_ind = population[0]
+        for ind in population:
+            ind.evaluate_individual(test_cases)
+            #print(ind)
+
+            if ind.total_error < best_ind.total_error:
+                best_ind = ind
+
+
+        # Report about generation
+        report(generation, best_ind)
+
+        if best_ind.is_solution(threshold):
+            return best_ind
+
+        # Create children
+        old_population = population
+        population = []
+
+        for _ in range(POPULATION_SIZE):
+            # Use 50% mutation, 50% crossover
+
+            if random.random() < 0.5:
+                child = mutation(tournament_selection(population, TOURNAMENT_SIZE))
+            else:
+                child = crossover(tournament_selection(population, TOURNAMENT_SIZE),
+                                  tournament_selection(population, TOURNAMENT_SIZE))
+
+            population.append(child)
+
+
+
+        # selected = tournament_selection(population, 5)
+        # print("------")
+        # print(selected)
+
+        break
+
+
+
 
 
 def main():
 
+    test_cases = make_test_cases()
+
     # This program represents (+ (* x 5) y)
-    program = FunctionNode("+",
-                [FunctionNode("*",
-                   [TerminalNode("x"),
-                    TerminalNode(5.0)]),
-                 TerminalNode("y")])
+    # program = FunctionNode("+",
+    #             [FunctionNode("*",
+    #                [TerminalNode("x"),
+    #                 TerminalNode(5.0)]),
+    #              TerminalNode("y")])
+    #
+    # print("Program:", program)
+    # print("Depth:", program.tree_depth())
+    #
+    # assignments = {"x": 7.0, "y": 9.0}
+    #
+    # print("program({}) =".format(assignments), program.eval(assignments))
+    #
+    # assignments = {"x": 3.0, "y": 1000.0}
+    #
+    # print("program({}) =".format(assignments), program.eval(assignments))
+    # print()
+    #
+    # # Make a full tree with depth = 4
+    # prog2 = GPNode.generate_tree_full(4)
+    # print(prog2)
+    #
+    # assignments = {"x": 7.0, "y": 9.0}
+    #
+    # print("prog2({}) =".format(assignments), prog2.eval(assignments))
+    # print()
 
-    print("Program:", program)
-    print("Depth:", program.tree_depth())
+    # Test 400 random programs to make sure no errors
+    # for _ in range(400):
+    #     prog3 = GPNode.generate_tree_grow(6)
+    #     print(prog3)
+    #     print("prog3({}) =".format(assignments), prog3.eval(assignments))
+    #     print()
 
-    assignments = {"x": 7.0, "y": 9.0}
+    # for x in test_cases:
+    #     print(x)
 
-    print("program({}) =".format(assignments), program.eval(assignments))
+    # ind1 = Individual(program)
+    # ind1.evaluate_individual(test_cases)
+    # print(ind1)
+    # print()
+    #
+    # ind2 = Individual(prog2)
+    # ind2.evaluate_individual(test_cases)
+    # print(ind2)
+    # print()
 
-    assignments = {"x": 3.0, "y": 1000.0}
+    solution = gp(0.5)
 
-    print("program({}) =".format(assignments), program.eval(assignments))
-    print()
+    print("FINISHED GP")
+    print(solution)
 
-    # Make a full tree with depth = 4
-    prog2 = GPNode.generate_tree_full(4)
-    print(prog2)
-
-    assignments = {"x": 7.0, "y": 9.0}
-
-    print("prog2({}) =".format(assignments), prog2.eval(assignments))
-    print()
-
-    # Test 40 random programs to make sure no errors
-    for _ in range(40):
-        prog3 = GPNode.generate_tree_grow(6)
-        print(prog3)
-        print("prog3({}) =".format(assignments), prog3.eval(assignments))
-        print()
 
 
 if __name__ == "__main__":

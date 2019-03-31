@@ -2,7 +2,7 @@
 Put your documentation here!
 """
 
-import operator, random, math
+import operator, random, math, copy
 
 MAX_FLOAT = 10e12
 
@@ -54,7 +54,8 @@ def random_terminal():
     if random.random() < 0.5:
         terminal_value = random.choice(VARIABLES)
     else:
-        terminal_value = random.uniform(-10, 10)
+        #terminal_value = random.uniform(-10, 10)
+        terminal_value = 1.0
 
     return TerminalNode(terminal_value)
 
@@ -110,6 +111,7 @@ class GPNode:
         else:
             return cls.generate_tree_grow(depth)
 
+
 class FunctionNode(GPNode):
     """Internal nodes that contain Functions."""
 
@@ -140,6 +142,12 @@ class FunctionNode(GPNode):
         children_depths = [child.tree_depth() for child in self.children]
         return 1 + max(children_depths)
 
+    def size_of_subtree(self):
+        """Gives the size of the subtree of this node, in number of nodes."""
+        children_sizes = [child.size_of_subtree() for child in self.children]
+        return 1 + sum(children_sizes)
+
+
 
 class TerminalNode(GPNode):
     """Leaf nodes that contain terminals."""
@@ -161,6 +169,11 @@ class TerminalNode(GPNode):
     def tree_depth(self):
         """Returns the total depth of tree rooted at this node"""
         return 0
+
+    def size_of_subtree(self):
+        """Gives the size of the subtree of this node, in number of nodes. Since
+        this is a terminal node, is always 1."""
+        return 1
 
 
 class Individual:
@@ -196,6 +209,10 @@ class Individual:
         """Returns True if total_error is less than threshold."""
         return self.total_error < threshold
 
+    def nodes(self):
+        """Number of nodes in the program of this individual."""
+        return self.program.size_of_subtree()
+
 
 def tournament_selection(population, tournament_size):
     """Selects an individual from the population using tournament selection
@@ -214,9 +231,90 @@ def tournament_selection(population, tournament_size):
 
     return best
 
+def subtree_at_index(node, index):
+    """Returns subtree at particular index in this tree. Traverses tree in
+    depth-first order."""
+
+    if index == 0:
+        return node
+
+    # Subtract 1 for the current node
+    index -= 1
+
+    # Go through each child of the node, and find the one that contains this index
+    for child in node.children:
+        child_size = child.size_of_subtree()
+        if index < child_size:
+            return subtree_at_index(child, index)
+        index -= child_size
+
+    return "INDEX {} OUT OF BOUNDS".format(index)
+
+
+def replace_subtree_at_index(node, index, new_subtree):
+    """Replaces subtree at particular index in this tree. Traverses tree in
+    depth-first order."""
+
+    # Return the subtree if we've found index == 0
+    if index == 0:
+        return new_subtree
+
+    # Subtract 1 for the current node
+    index -= 1
+
+    # Go through each child of the node, and find the one that contains this index
+    for child_index in range(len(node.children)):
+        child_size = node.children[child_index].size_of_subtree()
+        if index < child_size:
+            new_child = replace_subtree_at_index(node.children[child_index], index, new_subtree)
+            node.children[child_index] = new_child
+            return node
+        index -= child_size
+
+    return "INDEX {} OUT OF BOUNDS".format(index)
 
 
 
+
+def random_subtree(program):
+    """Returns a random subtree from given program, selected uniformly."""
+
+    nodes = program.size_of_subtree()
+    node_index = random.randint(0, nodes - 1)
+
+    return subtree_at_index(program, node_index)
+
+def replace_random_subtree(program, new_subtree):
+    """Replaces a random subtree with new_subtree in program, with node to
+    be replaced selected uniformly."""
+
+    nodes = program.size_of_subtree()
+    node_index = random.randint(0, nodes - 1)
+
+    new_program = copy.deepcopy(program)
+
+    return replace_subtree_at_index(new_program, node_index, new_subtree)
+
+
+
+def mutation(parent):
+    """Mutates an individual parent by replacing a random subtree with a randomly
+    generated subtree."""
+
+    # Make a new subtree with depth between 1 and 4
+    new_subtree = GPNode.initialize_tree(1, 4)
+
+    # Replace the subtree and return the new program
+    return replace_random_subtree(parent.program, new_subtree)
+
+def crossover(parent1, parent2):
+    """Crosses over two parents (individuals) to create a child program."""
+
+    # Select a random subtree from parent2 to insert into parent1
+    new_subtree = random_subtree(parent2.program)
+
+    # Replace the subtree and return the new program
+    return replace_random_subtree(parent1.program, new_subtree)
 
 
 
@@ -241,6 +339,7 @@ def report(generation, best_individual):
 
     print("===== Report at Generation {:3d} =====".format(generation))
     print("Best program: {}".format(best_individual.program))
+    print("Best program size: {}".format(best_individual.nodes()))
     print("Best errors: {}".format(best_individual.errors))
     print("Best total error: {}".format(best_individual.total_error))
     print("====================================\n")
@@ -280,20 +379,13 @@ def gp(threshold):
             # Use 50% mutation, 50% crossover
 
             if random.random() < 0.5:
-                child = mutation(tournament_selection(population, TOURNAMENT_SIZE))
+                child = mutation(tournament_selection(old_population, TOURNAMENT_SIZE))
             else:
-                child = crossover(tournament_selection(population, TOURNAMENT_SIZE),
-                                  tournament_selection(population, TOURNAMENT_SIZE))
+                child = crossover(tournament_selection(old_population, TOURNAMENT_SIZE),
+                                  tournament_selection(old_population, TOURNAMENT_SIZE))
 
-            population.append(child)
+            population.append(Individual(child))
 
-
-
-        # selected = tournament_selection(population, 5)
-        # print("------")
-        # print(selected)
-
-        break
 
 
 
@@ -304,11 +396,21 @@ def main():
     test_cases = make_test_cases()
 
     # This program represents (+ (* x 5) y)
-    # program = FunctionNode("+",
-    #             [FunctionNode("*",
-    #                [TerminalNode("x"),
-    #                 TerminalNode(5.0)]),
-    #              TerminalNode("y")])
+    program = FunctionNode("+",
+                [FunctionNode("*",
+                   [TerminalNode("x"),
+                    TerminalNode(5.0)]),
+                 TerminalNode("y")])
+
+    prog2 = FunctionNode("-",
+                [FunctionNode("sin",
+                    [FunctionNode("/",
+                        [TerminalNode(1),
+                         TerminalNode(2)])
+                    ]),
+                 FunctionNode("exp",
+                    [TerminalNode("y")])
+                    ])
     #
     # print("Program:", program)
     # print("Depth:", program.tree_depth())
@@ -323,7 +425,7 @@ def main():
     # print()
     #
     # # Make a full tree with depth = 4
-    # prog2 = GPNode.generate_tree_full(4)
+    #prog2 = GPNode.generate_tree_full(4)
     # print(prog2)
     #
     # assignments = {"x": 7.0, "y": 9.0}
@@ -345,11 +447,34 @@ def main():
     # ind1.evaluate_individual(test_cases)
     # print(ind1)
     # print()
-    #
+    # #
     # ind2 = Individual(prog2)
     # ind2.evaluate_individual(test_cases)
     # print(ind2)
     # print()
+    #
+    # print(ind2.nodes())
+    # for index in range(ind2.nodes()):
+    #     print(index, ":", subtree_at_index(ind2.program, index))
+
+    # print(ind2.nodes())
+    # q = TerminalNode("Z")
+    # for index in range(ind2.nodes()):
+    #     new_program = copy.deepcopy(ind2.program)
+    #     print(index, ":", replace_subtree_at_index(new_program, index, q))
+
+    # Test Crossover
+    # print("PARENT1:", ind1.program)
+    # print("PARENT2:", ind2.program)
+    # print("---------")
+    # for _ in range(10):
+    #     print(" " * 8, crossover(ind1, ind2))
+
+    # Test mutation
+    # print("PARENT2:", ind2.program)
+    # print("---------")
+    # for _ in range(10):
+    #     print(" " * 8, mutation(ind2))
 
     solution = gp(0.5)
 

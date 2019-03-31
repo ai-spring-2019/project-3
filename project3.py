@@ -40,6 +40,18 @@ FUNCTIONS = list(FUNCTION_DICT.keys())
 VARIABLES = ["x", "y"]
 
 
+def random_terminal():
+    """Returns a random terminal node."""
+
+    # Half of the time pick a variable, the other half pick a random
+    # float in the range [-10, 10]
+    if random.random() < 0.5:
+        terminal_value = random.choice(VARIABLES)
+    else:
+        terminal_value = random.uniform(-10, 10)
+
+    return TerminalNode(terminal_value)
+
 class GPNode:
     """Represents nodes in a program's tree."""
 
@@ -52,14 +64,7 @@ class GPNode:
         generation and a given max_depth."""
 
         if max_depth == 0:
-            # Half of the time pick a variable, the other half pick a random
-            # float in the range [-10, 10]
-            if random.random() < 0.5:
-                terminal_value = random.choice(VARIABLES)
-            else:
-                terminal_value = random.uniform(-10, 10)
-
-            return TerminalNode(terminal_value)
+            return random_terminal()
 
         else:
             function_symbol = random.choice(FUNCTIONS)
@@ -67,6 +72,27 @@ class GPNode:
             children = [GPNode.generate_tree_full(max_depth - 1) for _ in range(arity)]
 
             return FunctionNode(function_symbol, children)
+
+    @classmethod
+    def generate_tree_grow(cls, max_depth):
+        """Generates and returns a new tree using the Grow method for tree
+        generation and a given max_depth."""
+
+        if max_depth == 0:
+            return random_terminal()
+
+        else:
+
+            # 3/4 of the time pick a function, 1/4 of the time pick a terminal
+            if random.random() < 0.25:
+                return random_terminal()
+
+            else:
+                function_symbol = random.choice(FUNCTIONS)
+                arity = FUNCTION_ARITIES[function_symbol]
+                children = [GPNode.generate_tree_grow(max_depth - 1) for _ in range(arity)]
+
+                return FunctionNode(function_symbol, children)
 
 
 class FunctionNode(GPNode):
@@ -154,9 +180,9 @@ def main():
     print("prog2({}) =".format(assignments), prog2.eval(assignments))
     print()
 
-    # Test 200 random programs to make sure no errors
-    for _ in range(200):
-        prog3 = GPNode.generate_tree_full(6)
+    # Test 40 random programs to make sure no errors
+    for _ in range(40):
+        prog3 = GPNode.generate_tree_grow(6)
         print(prog3)
         print("prog3({}) =".format(assignments), prog3.eval(assignments))
         print()

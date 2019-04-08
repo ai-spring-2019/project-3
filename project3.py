@@ -4,12 +4,12 @@ Put your documentation here!
 
 import operator, random, math, copy
 
-MAX_FLOAT = 10e12
+MAX_FLOAT = 1e12
 
 def safe_division(numerator, denominator):
     """Divides numerator by denominator. If denominator is 0, returns
     MAX_FLOAT as an approximate of infinity."""
-    if denominator == 0:
+    if abs(denominator) <= 1 / MAX_FLOAT:
         return MAX_FLOAT
     return numerator / denominator
 
@@ -42,7 +42,7 @@ FUNCTIONS = list(FUNCTION_DICT.keys())
 
 VARIABLES = ["x", "y"]
 POPULATION_SIZE = 100
-MAX_GENERATIONS = 100
+MAX_GENERATIONS = 20
 TOURNAMENT_SIZE = 5
 
 
@@ -54,8 +54,8 @@ def random_terminal():
     if random.random() < 0.5:
         terminal_value = random.choice(VARIABLES)
     else:
-        #terminal_value = random.uniform(-10, 10)
-        terminal_value = 1.0
+        terminal_value = random.uniform(-10, 10)
+        #terminal_value = 1.0
 
     return TerminalNode(terminal_value)
 
@@ -111,7 +111,6 @@ class GPNode:
         else:
             return cls.generate_tree_grow(depth)
 
-
 class FunctionNode(GPNode):
     """Internal nodes that contain Functions."""
 
@@ -130,12 +129,17 @@ class FunctionNode(GPNode):
     def eval(self, variable_assignments):
         """Evaluates node given a dictionary of variable assignments."""
 
-        # Calculate values of children nodes
-        children_results = [child.eval(variable_assignments) for child in self.children]
+        try:
+            # Calculate values of children nodes
+            children_results = [child.eval(variable_assignments) for child in self.children]
 
-        # Apply function to children_results. * unpacks the list of results into
-        # arguments to self.function.
-        return self.function(*children_results)
+            # Apply function to children_results. * unpacks the list of results into
+            # arguments to self.function.
+            return self.function(*children_results)
+        except ValueError as e:
+            print("----------\nWeird value error:", e)
+            print("Node causing it:", self)
+            raise
 
     def tree_depth(self):
         """Returns the total depth of tree rooted at this node"""
@@ -146,7 +150,6 @@ class FunctionNode(GPNode):
         """Gives the size of the subtree of this node, in number of nodes."""
         children_sizes = [child.size_of_subtree() for child in self.children]
         return 1 + sum(children_sizes)
-
 
 
 class TerminalNode(GPNode):
@@ -174,6 +177,86 @@ class TerminalNode(GPNode):
         """Gives the size of the subtree of this node, in number of nodes. Since
         this is a terminal node, is always 1."""
         return 1
+
+
+def get_tokens(lisp):
+    """Given a string representation of Lisp code, break into tokens."""
+
+    broken = lisp.split()
+
+    tokens = []
+    for thing in broken:
+        # Handle parentheses
+        if thing[0] == "(":
+            tokens.append("(")
+            tokens.append(thing[1:])
+
+        elif thing[-1] == ")":
+            tokens_ending_in_paren = []
+            while thing[-1] == ")":
+                tokens_ending_in_paren.append(")")
+                thing = thing[:-1]
+            if thing != "":
+                tokens_ending_in_paren.append(thing)
+            tokens_ending_in_paren.reverse()
+            tokens += tokens_ending_in_paren
+
+        else:
+            # Handle no parentheses
+            tokens.append(thing)
+
+    return tokens
+
+def build_syntax_tree(tokens):
+    """Bulds an AST/GP tree based on tokens."""
+
+    # Check for recursive case
+    if tokens[0] == "(":
+        assert tokens[-1] == ")"
+        assert tokens[1] in FUNCTIONS
+
+        # Tokens for all arguments
+        args_tokens = tokens[2:-1]
+
+        # children will have actual nodes for children
+        children = []
+        while len(args_tokens) > 0:
+            first_token = args_tokens.pop(0)
+            if first_token != "(":
+                # Handle non-paren arguments
+                children.append(build_syntax_tree([first_token]))
+            else:
+                # Handle paren arguments. Need to find matching paren.
+                first_arg_tokens = [first_token]
+                opened = 1
+
+                while opened > 0:
+                    token = args_tokens.pop(0)
+                    if token == "(":
+                        opened += 1
+                    elif token == ")":
+                        opened -= 1
+                    first_arg_tokens.append(token)
+
+                children.append(build_syntax_tree(first_arg_tokens))
+
+        return FunctionNode(tokens[1], children)
+
+    else:
+        # Base case is when we have no more parentheses
+        # Should only be here if we have a variable or float
+        assert len(tokens) == 1
+
+        token = tokens[0]
+        if token in VARIABLES:
+            return TerminalNode(token)
+        else:
+            return TerminalNode(float(token))
+
+def parse_lisp(lisp):
+    """Parses a string in lisp syntax into a GP program."""
+    tokens = get_tokens(lisp)
+    return build_syntax_tree(tokens)
 
 
 class Individual:
@@ -218,16 +301,14 @@ def tournament_selection(population, tournament_size):
     """Selects an individual from the population using tournament selection
     with given tournament size."""
 
-    best = None
-    best_error = MAX_FLOAT
+    best = random.choice(population)
 
     # Consider tournament_size random individuals, and pick the best one
-    for _ in range(tournament_size):
+    for _ in range(tournament_size - 1):
         ind = random.choice(population)
 
-        if ind.total_error < best_error:
+        if ind.total_error < best.total_error:
             best = ind
-            best_error = ind.total_error
 
     return best
 
@@ -311,7 +392,7 @@ def crossover(parent1, parent2):
     """Crosses over two parents (individuals) to create a child program."""
 
     # Select a random subtree from parent2 to insert into parent1
-    new_subtree = random_subtree(parent2.program)
+    new_subtree = copy.deepcopy(random_subtree(parent2.program))
 
     # Replace the subtree and return the new program
     return replace_random_subtree(parent1.program, new_subtree)
@@ -379,15 +460,17 @@ def gp(threshold):
             # Use 50% mutation, 50% crossover
 
             if random.random() < 0.5:
-                child = mutation(tournament_selection(old_population, TOURNAMENT_SIZE))
+                parent = tournament_selection(old_population, TOURNAMENT_SIZE)
+                child = mutation(parent)
             else:
-                child = crossover(tournament_selection(old_population, TOURNAMENT_SIZE),
-                                  tournament_selection(old_population, TOURNAMENT_SIZE))
+                parent1 = tournament_selection(old_population, TOURNAMENT_SIZE)
+                parent2 = tournament_selection(old_population, TOURNAMENT_SIZE)
+                child = crossover(parent1, parent2)
 
             population.append(Individual(child))
 
 
-
+    return "FAILURE"
 
 
 
@@ -411,6 +494,16 @@ def main():
                  FunctionNode("exp",
                     [TerminalNode("y")])
                     ])
+
+    prog3 = parse_lisp("(+ -9.44869115097491 x)")
+
+    #print(prog3)
+
+    prog4 = parse_lisp("(+ (* (+ (/ x y) (sin x)) (+ (- x -7.583525807352453) (+ (- x x) x))) (+ -9.44869115097491 x))")
+
+    print(prog4)
+    print(prog4.eval({"x": 5, "y": 1}))
+
     #
     # print("Program:", program)
     # print("Depth:", program.tree_depth())
@@ -476,10 +569,13 @@ def main():
     # for _ in range(10):
     #     print(" " * 8, mutation(ind2))
 
-    solution = gp(0.5)
+    #for _ in range(500):
 
-    print("FINISHED GP")
-    print(solution)
+
+    #solution = gp(0.5)
+
+    #print("FINISHED GP")
+    #print(solution)
 
 
 

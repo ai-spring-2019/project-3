@@ -41,8 +41,8 @@ FUNCTION_ARITIES = {"+": 2,
 FUNCTIONS = list(FUNCTION_DICT.keys())
 
 VARIABLES = ["x", "y"]
-POPULATION_SIZE = 100
-MAX_GENERATIONS = 20
+POPULATION_SIZE = 1000
+MAX_GENERATIONS = 100
 TOURNAMENT_SIZE = 5
 
 
@@ -59,59 +59,8 @@ def random_terminal():
 
     return TerminalNode(terminal_value)
 
-class GPNode:
-    """Represents nodes in a program's tree."""
 
-    def __init__(self):
-        pass
-
-    @classmethod
-    def generate_tree_full(cls, max_depth):
-        """Generates and returns a new tree using the Full method for tree
-        generation and a given max_depth."""
-
-        if max_depth == 0:
-            return random_terminal()
-
-        else:
-            function_symbol = random.choice(FUNCTIONS)
-            arity = FUNCTION_ARITIES[function_symbol]
-            children = [GPNode.generate_tree_full(max_depth - 1) for _ in range(arity)]
-
-            return FunctionNode(function_symbol, children)
-
-    @classmethod
-    def generate_tree_grow(cls, max_depth):
-        """Generates and returns a new tree using the Grow method for tree
-        generation and a given max_depth."""
-
-        if max_depth == 0:
-            return random_terminal()
-
-        else:
-
-            # 3/4 of the time pick a function, 1/4 of the time pick a terminal
-            if random.random() < 0.25:
-                return random_terminal()
-
-            else:
-                function_symbol = random.choice(FUNCTIONS)
-                arity = FUNCTION_ARITIES[function_symbol]
-                children = [GPNode.generate_tree_grow(max_depth - 1) for _ in range(arity)]
-
-                return FunctionNode(function_symbol, children)
-
-    @classmethod
-    def initialize_tree(cls, min_depth, max_depth):
-        """Generates a tree using Full or Grow, with a depth somewhere between
-        min_depth and max_depth inclusive"""
-        depth = random.randint(min_depth, max_depth)
-        if random.random() < 0.5:
-            return cls.generate_tree_full(depth)
-        else:
-            return cls.generate_tree_grow(depth)
-
-class FunctionNode(GPNode):
+class FunctionNode:
     """Internal nodes that contain Functions."""
 
     def __init__(self, function_symbol, children):
@@ -152,7 +101,7 @@ class FunctionNode(GPNode):
         return 1 + sum(children_sizes)
 
 
-class TerminalNode(GPNode):
+class TerminalNode:
     """Leaf nodes that contain terminals."""
 
     def __init__(self, terminal):
@@ -177,6 +126,50 @@ class TerminalNode(GPNode):
         """Gives the size of the subtree of this node, in number of nodes. Since
         this is a terminal node, is always 1."""
         return 1
+
+
+def generate_tree_full(max_depth):
+    """Generates and returns a new tree using the Full method for tree
+    generation and a given max_depth."""
+
+    if max_depth == 0:
+        return random_terminal()
+
+    else:
+        function_symbol = random.choice(FUNCTIONS)
+        arity = FUNCTION_ARITIES[function_symbol]
+        children = [generate_tree_full(max_depth - 1) for _ in range(arity)]
+
+        return FunctionNode(function_symbol, children)
+
+def generate_tree_grow(max_depth):
+    """Generates and returns a new tree using the Grow method for tree
+    generation and a given max_depth."""
+
+    if max_depth == 0:
+        return random_terminal()
+
+    else:
+
+        # 3/4 of the time pick a function, 1/4 of the time pick a terminal
+        if random.random() < 0.25:
+            return random_terminal()
+
+        else:
+            function_symbol = random.choice(FUNCTIONS)
+            arity = FUNCTION_ARITIES[function_symbol]
+            children = [generate_tree_grow(max_depth - 1) for _ in range(arity)]
+
+            return FunctionNode(function_symbol, children)
+
+def initialize_tree(min_depth, max_depth):
+    """Generates a tree using Full or Grow, with a depth somewhere between
+    min_depth and max_depth inclusive"""
+    depth = random.randint(min_depth, max_depth)
+    if random.random() < 0.5:
+        return generate_tree_full(depth)
+    else:
+        return generate_tree_grow(depth)
 
 
 def get_tokens(lisp):
@@ -383,7 +376,7 @@ def mutation(parent):
     generated subtree."""
 
     # Make a new subtree with depth between 1 and 4
-    new_subtree = GPNode.initialize_tree(1, 4)
+    new_subtree = initialize_tree(1, 4)
 
     # Replace the subtree and return the new program
     return replace_random_subtree(parent.program, new_subtree)
@@ -432,7 +425,7 @@ def gp(threshold):
     test_cases = make_test_cases()
 
     # Create a population
-    population = [Individual(GPNode.initialize_tree(2, 5)) for _ in range(POPULATION_SIZE)]
+    population = [Individual(initialize_tree(2, 5)) for _ in range(POPULATION_SIZE)]
 
     for generation in range(MAX_GENERATIONS):
 
@@ -517,18 +510,18 @@ def main():
     # print("program({}) =".format(assignments), program.eval(assignments))
     # print()
     #
-    # # Make a full tree with depth = 4
-    #prog2 = GPNode.generate_tree_full(4)
+    # Make a full tree with depth = 4
+    # prog2 = generate_tree_full(4)
     # print(prog2)
     #
     # assignments = {"x": 7.0, "y": 9.0}
     #
     # print("prog2({}) =".format(assignments), prog2.eval(assignments))
     # print()
-
-    # Test 400 random programs to make sure no errors
+    #
+    # #Test 400 random programs to make sure no errors
     # for _ in range(400):
-    #     prog3 = GPNode.generate_tree_grow(6)
+    #     prog3 = generate_tree_grow(6)
     #     print(prog3)
     #     print("prog3({}) =".format(assignments), prog3.eval(assignments))
     #     print()
@@ -572,10 +565,10 @@ def main():
     #for _ in range(500):
 
 
-    #solution = gp(0.5)
+    solution = gp(0.5)
 
-    #print("FINISHED GP")
-    #print(solution)
+    print("FINISHED GP")
+    print(solution)
 
 
 

@@ -1,85 +1,72 @@
 """
-Your documentation here
+symbolic_regression.py
+Symbolic Regression GP. Similar to the GP we wrote in class.
 """
 
-import dominion
+import operator, random, math, copy
 
-import operator, random, math, copy, re
+MAX_FLOAT = 1e12
 
-CARDS = ["Province", "Gold", "Witch", "Market", "Laboratory", "Duchy", "CouncilRoom", "Smithy", "Moneylender", "Gardens", "Workshop", "Village", "Silver", "Estate", "Chapel", "Curse", "Copper"]
+def safe_division(numerator, denominator):
+    """Divides numerator by denominator. If denominator is 0, returns
+    MAX_FLOAT as an approximate of infinity."""
+    if abs(denominator) <= 1 / MAX_FLOAT:
+        return MAX_FLOAT
+    return numerator / denominator
 
-def erf_have_lt_y_x(y = None, x = None):
-    """Returns the function symbol and function for this ERF"""
+def safe_exp(power):
+    """Takes e^power. If this results in a math overflow, or is greater
+    than MAX_FLOAT, instead returns MAX_FLOAT"""
+    try:
+        result = math.exp(power)
+        if result > MAX_FLOAT:
+            return MAX_FLOAT
+        return result
+    except OverflowError:
+        return MAX_FLOAT
 
-    if y == None:
-        Y_RANGE = (1, 11)
-        y = random.randint(Y_RANGE[0], Y_RANGE[1])
-
-    if x == None:
-        x = random.choice(CARDS)
-
-    # The symbol for this function.
-    symbol = "have_lt_{}_{}".format(y, x)
-
-    def erf_fn(cards_owned):
-        """A closure to return which child to choose depending on cards_owned.
-        Every erf_fn needs to return the index of the child to choose.
-        This one returns child 0 if you have less than y of card x, and
-        child 1 otherwise."""
-
-        number_of_x = cards_owned.get(x, 0)
-        if number_of_x < y:
-            return 0
-        return 1
-
-    return (symbol, erf_fn)
-
-
-# We want ephemeral random functions (ERFs) that do things like the following:
-# have_lt_y_x, where x is the name of a card, y is an integer. This would return
-# the "true" branch (first child) if the player has less than y of card x. So,
-# have_lt_3_Smithy is true if you have less than 3 Smithy.
-
-FUNCTION_DICT = {"ERF have_lt_y_x": erf_have_lt_y_x}
-FUNCTION_ARITIES = {"ERF have_lt_y_x": 2}
+FUNCTION_DICT = {"+": operator.add,
+                 "-": operator.sub,
+                 "*": operator.mul,
+                 "/": safe_division,
+                 "exp": safe_exp,
+                 "sin": math.sin,
+                 "cos": math.cos}
+FUNCTION_ARITIES = {"+": 2,
+                    "-": 2,
+                    "*": 2,
+                    "/": 2,
+                    "exp": 1,
+                    "sin": 1,
+                    "cos": 1}
 FUNCTIONS = list(FUNCTION_DICT.keys())
 
-POPULATION_SIZE = 100
-MAX_GENERATIONS = 20
+VARIABLES = ["x", "y"]
+POPULATION_SIZE = 1000
+MAX_GENERATIONS = 100
 TOURNAMENT_SIZE = 5
 
 
 def random_terminal():
-    """Returns a random terminal node.
-    For Dominion, all terminals will be shuffled versions of the CARDS list"""
+    """Returns a random terminal node."""
 
-    terminal = copy.deepcopy(CARDS)
-    random.shuffle(terminal)
+    # Half of the time pick a variable, the other half pick a random
+    # float in the range [-10, 10]
+    if random.random() < 0.5:
+        terminal_value = random.choice(VARIABLES)
+    else:
+        terminal_value = random.uniform(-10, 10)
+        #terminal_value = 1.0
 
-    return TerminalNode(terminal)
+    return TerminalNode(terminal_value)
 
 
 class FunctionNode:
     """Internal nodes that contain Functions."""
 
     def __init__(self, function_symbol, children):
-        if function_symbol.startswith("ERF"):
-            # Handle ERFs
-            erf_function = FUNCTION_DICT[function_symbol]
-            self.function_symbol, self.function = erf_function()
-
-        elif function_symbol.startswith("have_lt"):
-            # Handle making a string have_lt_y_x function into the actual function
-            match = re.search("have_lt_(\d+)_(.*)", function_symbol)
-            y = int(match.group(1))
-            x = match.group(2)
-            self.function_symbol, self.function = erf_have_lt_y_x(y, x)
-
-        else:
-            # Handle normal functions
-            self.function_symbol = function_symbol
-            self.function = FUNCTION_DICT[self.function_symbol]
-
+        self.function_symbol = function_symbol
+        self.function = FUNCTION_DICT[self.function_symbol]
         self.children = children
 
     def __str__(self):
@@ -89,20 +76,20 @@ class FunctionNode:
         result += ")"
         return result
 
-    def eval(self, game, cards_owned):
-        """Evaluates node given the game object and cards_owned by current
-        player. You SHOULD NOT change game or cards_owned in any way (since
-        otherwise you could just tell game to give you all the Provinces, otherwise
-        known as cheating). But, you can use any information stored in them that
-        would be accessible to players of the game -- in other words, you shouldn't
-        be looking at your opponent's hand, the top card of your deck, or anything
-        else that wouldn't be allowed."""
+    def eval(self, variable_assignments):
+        """Evaluates node given a dictionary of variable assignments."""
 
-        # Since we are evolving decision trees, each FunctionNode should simply
-        # pick between its children, returning one of them (evaluated)
-        child_index_to_return = self.function(cards_owned)
-        return self.children[child_index_to_return].eval(game, cards_owned)
+        try:
+            # Calculate values of children nodes
+            children_results = [child.eval(variable_assignments) for child in self.children]
 
+            # Apply function to children_results. * unpacks the list of results into
+            # arguments to self.function.
+            return self.function(*children_results)
+        except ValueError as e:
+            print("----------\nWeird value error:", e)
+            print("Node causing it:", self)
+            raise
 
     def tree_depth(self):
         """Returns the total depth of tree rooted at this node"""
@@ -124,8 +111,12 @@ class TerminalNode:
     def __str__(self):
         return str(self.terminal)
 
-    def eval(self, game, cards_owned):
-        """Simply returns the terminal."""
+    def eval(self, variable_assignments):
+        """Evaluates node given a dictionary of variable assignments."""
+
+        if self.terminal in variable_assignments:
+            return variable_assignments[self.terminal]
+
         return self.terminal
 
     def tree_depth(self):
@@ -181,11 +172,6 @@ def initialize_tree(min_depth, max_depth):
     else:
         return generate_tree_grow(depth)
 
-################################################################################
-## Below here is a parser of evolved lisp programs. You can pass parse_lisp
-## a string version of an evolved program and get back the program tree.
-## You can therefore just store your best programs as strings, and use this
-## to build them into programs to compare them, etc.
 
 def get_tokens(lisp):
     """Given a string representation of Lisp code, break into tokens."""
@@ -193,40 +179,9 @@ def get_tokens(lisp):
     broken = lisp.split()
 
     tokens = []
-    in_list = False
-    building_list = ""
-
     for thing in broken:
-
-        # Handle in a list
-        if in_list:
-            # Check if the end of the list
-            if "]" in thing:
-                tokens_ending_in_paren = []
-                while thing[-1] == ")":
-                    tokens_ending_in_paren.append(")")
-                    thing = thing[:-1]
-
-                building_list += " " + thing
-                tokens_ending_in_paren.append(building_list)
-                tokens_ending_in_paren.reverse()
-                tokens += tokens_ending_in_paren
-
-                in_list = False
-                building_list = ""
-            else:
-                building_list += " " + thing
-
-        # Handle start of lists like ['Gardens', 'Smithy', 'Gold', ...]
-        elif thing[0] == "[":
-            if thing[-1] == "]":
-                tokens.append(thing)
-            else:
-                in_list = True
-                building_list = thing
-
         # Handle parentheses
-        elif thing[0] == "(":
+        if thing[0] == "(":
             tokens.append("(")
             tokens.append(thing[1:])
 
@@ -248,9 +203,11 @@ def get_tokens(lisp):
 
 def build_syntax_tree(tokens):
     """Bulds an AST/GP tree based on tokens."""
+
     # Check for recursive case
     if tokens[0] == "(":
         assert tokens[-1] == ")"
+        assert tokens[1] in FUNCTIONS
 
         # Tokens for all arguments
         args_tokens = tokens[2:-1]
@@ -285,41 +242,16 @@ def build_syntax_tree(tokens):
         assert len(tokens) == 1
 
         token = tokens[0]
-        terminal = eval(token)
-        return TerminalNode(terminal)
+        if token in VARIABLES:
+            return TerminalNode(token)
+        else:
+            return TerminalNode(float(token))
 
 def parse_lisp(lisp):
     """Parses a string in lisp syntax into a GP program."""
     tokens = get_tokens(lisp)
     return build_syntax_tree(tokens)
 
-
-################################################################################
-## Classes for GP Players and Individuals
-
-class GPPlayer(dominion.Player):
-    """A player evolved through GP"""
-
-    def __init__(self, gp_tree):
-        dominion.Player.__init__(self)
-
-        # This is where the AI's evolved strategy tree is stored
-        self.strategy = gp_tree
-
-    def choose_gain(self, game, coins):
-        """Uses self.strategy to find the buy order list, and then buys first
-        card that can buy in the list."""
-
-        # Since strategy is a GP tree, can just call with cards_owned
-        buy_order_list = self.strategy.eval(game, self.cards_owned)
-
-        # Find first card in list that can buy, and buy it
-        for card_name in buy_order_list:
-            if game.can_buy(card_name, coins):
-                return card_name
-
-        # If can't buy anything, pass
-        return "pass"
 
 class Individual:
     """Represents a GP individual"""
@@ -337,56 +269,22 @@ class Individual:
 
     def evaluate_individual(self, test_cases):
         """Evaluates the individual given a set of test cases. test_cases should
-        be a list of Dominion player trees to play as opponents.
-        Plays 2 games against each opponent, one as player 0 and one as player 1."""
-
-        # TMH CHANGE HERE
+        be a list of input/output pairs (tuples) telling what output should be produced
+        given each input. Inputs are themselves dictionaries of assignments to
+        variable names (strings), and outputs are floats."""
 
         self.errors = []
+        for (input, correct_output) in test_cases:
+            program_output = self.program.eval(input)
 
-        # Self playing as Player 0
-        for opponent in test_cases:
-            player0 = GPPlayer(self.program)
-            player1 = GPPlayer(opponent)
-            verbose = False
-
-            game = dominion.Dominion(player0, player1, verbose)
-            winner = game.play()
-
-            if winner == "draw":
-                error = 0.5
-            elif winner == 0:
-                error = 0
-            else:
-                error = 1
-
+            error = abs(program_output - correct_output)
             self.errors.append(error)
-
-        # Self playing as Player 1
-        for opponent in test_cases:
-            player1 = GPPlayer(self.program)
-            player0 = GPPlayer(opponent)
-            verbose = False
-
-            game = dominion.Dominion(player0, player1, verbose)
-            winner = game.play()
-
-            if winner == "draw":
-                error = 0.5
-            elif winner == 1:
-                error = 0
-            else:
-                error = 1
-
-            self.errors.append(error)
-
-        print("ERRORS:", self.errors)
 
         self.total_error = sum(self.errors)
 
     def is_solution(self, threshold):
         """Returns True if total_error is less than threshold."""
-        return self.total_error <= threshold
+        return self.total_error < threshold
 
     def nodes(self):
         """Number of nodes in the program of this individual."""
@@ -496,14 +394,18 @@ def crossover(parent1, parent2):
 
 
 def make_test_cases():
-    """Makes a list of test cases. Each test case a random Dominion player tree."""
+    """Makes a list of test cases. Each test case is a tuple where the first
+    element is a dictionary containing the x and y assignments, and the second
+    element is the correct output. Hard coded for the function
+       f(x,y) = (x * 5) + y """
 
-    NUM_CASES = 10
     cases = []
 
-    for _ in range(10):
-        tree = initialize_tree(2, 5)
-        cases.append(tree)
+    for x in range(-10, 11, 2):
+        for y in range(-10, 11, 2):
+            correct_output = float((x * 5) + y)
+            input_output = ({"x": float(x), "y": float(y)}, correct_output)
+            cases.append(input_output)
 
     return cases
 
@@ -517,8 +419,8 @@ def report(generation, best_individual):
     print("Best total error: {}".format(best_individual.total_error))
     print("====================================\n")
 
-def gp():
-    """Runs GP. Returns an individual with total_error of 0."""
+def gp(threshold):
+    """Runs GP. Returns an individual with total_error less than threshold."""
 
     # Create test cases:
     test_cases = make_test_cases()
@@ -530,8 +432,7 @@ def gp():
 
         # Evaluate the population
         best_ind = population[0]
-        for i, ind in enumerate(population):
-            print("\nEvaluating individual {}".format(i))
+        for ind in population:
             ind.evaluate_individual(test_cases)
             #print(ind)
 
@@ -542,7 +443,7 @@ def gp():
         # Report about generation
         report(generation, best_ind)
 
-        if best_ind.is_solution(0):
+        if best_ind.is_solution(threshold):
             return best_ind
 
         # Create children
@@ -566,49 +467,43 @@ def gp():
     return "FAILURE"
 
 
+
 def main():
 
-    cards_owned_example = {"Estate": 3,
-                           "Copper": 7,
-                           "Smithy": 8,
-                           "Silver": 6,
-                           "Village": 9,
-                           "Gold": 12,
-                           "Duchy": 4}
+    test_cases = make_test_cases()
 
-    #### This code creates a random tree and evaluates it with regards to some specific cards owned.
-    # prog1 = initialize_tree(2, 5)
-    # print(prog1)
-    # print()
-    # print(prog1.eval(None, cards_owned_example))
-
-
-    ### These examples show the two ways to create ERFs, one with the parameters
-    ### specified, and one random.
-    # (sym, fn) = erf_have_lt_y_x()
-    # print(sym, ",  child branch to choose =", fn(cards_owned_example))
+    # This program represents (+ (* x 5) y)
+    # program = FunctionNode("+",
+    #             [FunctionNode("*",
+    #                [TerminalNode("x"),
+    #                 TerminalNode(5.0)]),
+    #              TerminalNode("y")])
     #
-    # (sym, fn) = erf_have_lt_y_x(5, "Copper")
-    # print(sym, ",  child branch to choose =", fn(cards_owned_example))
+    # prog2 = FunctionNode("-",
+    #             [FunctionNode("sin",
+    #                 [FunctionNode("/",
+    #                     [TerminalNode(1),
+    #                      TerminalNode(2)])
+    #                 ]),
+    #              FunctionNode("exp",
+    #                 [TerminalNode("y")])
+    #                 ])
+    #
+    # prog3 = parse_lisp("(+ -9.44869115097491 x)")
+    #
+    # #print(prog3)
+    #
+    # prog4 = parse_lisp("(+ (* (+ (/ x y) (sin x)) (+ (- x -7.583525807352453) (+ (- x x) x))) (+ -9.44869115097491 x))")
+    #
+    # print(prog4)
+    # print(prog4.eval({"x": 5, "y": 1}))
 
 
-    ### This will run GP to evolve Dominion strategies
-    solution = gp()
+    solution = gp(0.5)
 
     print("FINISHED GP")
     print(solution)
 
-    ### This shows how you can turn a program string into a program using parse_lisp
-    ### Note: as-is, this only works with the ERFs have_lt_y_x. If you want to
-    ### parse your own functions, you will need to add them to the constructor
-    ### of FunctionNode. See the chunk of code starting with:
-    ###        elif function_symbol.startswith("have_lt"):
-    ### to see an example.
-    # evolved_program_string = """(have_lt_10_Gold ['Gardens', 'Smithy', 'Gold', 'Village', 'Province', 'Copper', 'Moneylender', 'Market', 'Witch', 'Laboratory', 'Workshop', 'Chapel', 'Silver', 'CouncilRoom', 'Duchy', 'Estate', 'Curse'] (have_lt_11_Curse (have_lt_7_Silver ['Market', 'Workshop', 'Duchy', 'Laboratory', 'Gardens', 'Gold', 'Smithy', 'Witch', 'Estate', 'Copper', 'Province', 'Chapel', 'Moneylender', 'CouncilRoom', 'Curse', 'Silver', 'Village'] (have_lt_8_Smithy ['Village', 'Province', 'Workshop', 'Moneylender', 'Silver', 'Laboratory', 'Chapel', 'Witch', 'Duchy', 'Copper', 'Gardens', 'CouncilRoom', 'Gold', 'Smithy', 'Curse', 'Estate', 'Market'] ['Chapel', 'Laboratory', 'Workshop', 'Village', 'Silver', 'Market', 'Copper', 'Duchy', 'CouncilRoom', 'Gardens', 'Province', 'Smithy', 'Curse', 'Witch', 'Gold', 'Estate', 'Moneylender'])) ['Witch', 'Gardens', 'Village', 'Province', 'Chapel', 'Moneylender', 'CouncilRoom', 'Smithy', 'Market', 'Curse', 'Duchy', 'Workshop', 'Gold', 'Copper', 'Estate', 'Laboratory', 'Silver']))"""
-    #
-    # evolved_program = parse_lisp(evolved_program_string)
-    # print(evolved_program)
-    # print(evolved_program.eval(None, cards_owned_example))
 
 
 if __name__ == "__main__":

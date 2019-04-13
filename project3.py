@@ -306,7 +306,7 @@ class GPPlayer(dominion.Player):
         # This is where the AI's evolved strategy tree is stored
         self.strategy = gp_tree
 
-    def choose_gain(self, game, coins):
+    def choose_gain(self, game, coins, buys):
         """Uses self.strategy to find the buy order list, and then buys first
         card that can buy in the list."""
 

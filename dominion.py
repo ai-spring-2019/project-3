@@ -136,7 +136,7 @@ class Dominion():
                 done_gaining = False
                 while not done_gaining:
                     self.log('Player {}, what card would you like to gain from Workshop? Or enter "pass" to not gain.'.format(self.current_player))
-                    card_name = player.choose_gain(self, 4)
+                    card_name = player.choose_gain(self, 4, 1)
 
                     # Check if passing
                     if card_name.lower() == "pass":
@@ -181,7 +181,7 @@ class Dominion():
             self.log_basics(actions, buys, coins)
             self.log()
             self.log('Player {}, what card would you like to buy? Or enter "pass" to not buy.'.format(self.current_player))
-            card_name = player.choose_gain(self, coins)
+            card_name = player.choose_gain(self, coins, buys)
 
             # Check if passing
             if card_name.lower() == "pass":
@@ -825,7 +825,7 @@ class HumanPlayer(Player):
     def __init__(self):
         Player.__init__(self)
 
-    def choose_gain(self, game, coins):
+    def choose_gain(self, game, coins, buys):
         """Returns string of the card would like to gain.
         Takes the Dominion object as "game" since you may need the can_buy
         method to determine if you can buy a card."""
@@ -844,7 +844,7 @@ class BigMoney(Player):
         Player.__init__(self)
         self.smithy_count = 0
 
-    def choose_gain(self, game, coins):
+    def choose_gain(self, game, coins, buys):
         """Uses simple rules above"""
 
         if game.can_buy("Province", coins):

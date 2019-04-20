@@ -5,6 +5,7 @@ Your documentation here
 import dominion
 
 import operator, random, math, copy, re
+#import dill
 
 CARDS = ["Province", "Gold", "Witch", "Market", "Laboratory", "Duchy", "CouncilRoom", "Smithy", "Moneylender", "Gardens", "Workshop", "Village", "Silver", "Estate", "Chapel", "Curse", "Copper"]
 
@@ -565,6 +566,21 @@ def gp():
 
     return "FAILURE"
 
+def play_games(ind0, ind1, num_games):
+    """Plays num_games games between ind0 and ind1, returning a dictionary
+    of the results."""
+    record = {0:0, 1:0, "draw":0}
+
+    for i in range(num_games):
+        player0 = GPPlayer(ind0.program)
+        player1 = GPPlayer(ind1.program)
+        game = dominion.Dominion(player0, player1, False)
+        winner = game.play()
+        print(i, winner)
+        record[winner] += 1
+
+    return record
+
 
 def main():
 
@@ -593,10 +609,44 @@ def main():
 
 
     ### This will run GP to evolve Dominion strategies
-    solution = gp()
+    # solution = gp()
+    #
+    # print("FINISHED GP")
+    # print(solution)
 
-    print("FINISHED GP")
-    print(solution)
+
+    ### This shows how to dill (pickle) a solution program, which stores it in a binary
+    ### file so that the object can be reloaded in its entirety. To use this,
+    ### you will need to install dill with pip:
+    ###   pip install dill
+    ### and then uncomment the import to dill at the top of the program.
+    ### You can read more about dill here: https://pypi.org/project/dill/
+    ###
+    ### (Note: If you have any experience with pickle and are wondering why I'm
+    ### not using it here, it's because pickle can't handle closures like are
+    ### used in the ERFs.)
+    # file = open("solution.dat", "wb")
+    # dill.dump(solution, file)
+    # file.close()
+
+    ### Let's say you've done this twice, and renamed the files "solution0.dat"
+    ### and "solution1.dat". You can load them and have them play games against
+    ### each other like this:
+    # file0 = open("solution0.dat", "rb")
+    # solution0 = dill.load(file0)
+    # file0.close()
+    # file1 = open("solution1.dat", "rb")
+    # solution1 = dill.load(file1)
+    # file1.close()
+    #
+    # print(solution0)
+    # print(solution1)
+    #
+    # record = play_games(solution0, solution1, 100)
+    #
+    # print()
+    # print(record)
+
 
     ### This shows how you can turn a program string into a program using parse_lisp
     ### Note: as-is, this only works with the ERFs have_lt_y_x. If you want to

@@ -22,7 +22,7 @@ def erf_have_lt_y_x(y = None, x = None):
     # The symbol for this function.
     symbol = "have_lt_{}_{}".format(y, x)
 
-    def erf_fn(cards_owned):
+    def erf_fn(game, cards_owned):
         """A closure to return which child to choose depending on cards_owned.
         Every erf_fn needs to return the index of the child to choose.
         This one returns child 0 if you have less than y of card x, and
@@ -101,7 +101,7 @@ class FunctionNode:
 
         # Since we are evolving decision trees, each FunctionNode should simply
         # pick between its children, returning one of them (evaluated)
-        child_index_to_return = self.function(cards_owned)
+        child_index_to_return = self.function(game, cards_owned)
         return self.children[child_index_to_return].eval(game, cards_owned)
 
 

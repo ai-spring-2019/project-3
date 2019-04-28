@@ -601,11 +601,12 @@ def main():
 
     ### These examples show the two ways to create ERFs, one with the parameters
     ### specified, and one random.
+    # game = dominion.Dominion(dominion.Player(), dominion.Player(), False)
     # (sym, fn) = erf_have_lt_y_x()
-    # print(sym, ",  child branch to choose =", fn(cards_owned_example))
+    # print(sym, ",  child branch to choose =", fn(game, cards_owned_example))
     #
     # (sym, fn) = erf_have_lt_y_x(5, "Copper")
-    # print(sym, ",  child branch to choose =", fn(cards_owned_example))
+    # print(sym, ",  child branch to choose =", fn(game, cards_owned_example))
 
 
     ### This will run GP to evolve Dominion strategies
